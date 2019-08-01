@@ -1,3 +1,7 @@
+/** To compile with triSYCL :
+
+    clang++-9 -O3 -std=c++2a -I/home/rkeryell/Xilinx/Projects/Khronos/SYCL/triSYCL/branch/tmp/include edge_detection_with_webcam.cpp `pkg-config --libs opencv` -lpthread
+*/
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -6,7 +10,7 @@
 #include <string>
 
 #include <CL/sycl.hpp>
-#include "../../../utilities/device_selectors.hpp"
+//#include "../../../utilities/device_selectors.hpp"
 
 // OpenCV Includes
 #include <opencv2/opencv.hpp>
@@ -15,6 +19,7 @@
 #include <opencv2/highgui/highgui.hpp>
 
 using namespace cl::sycl;
+using namespace cl::sycl::vendor;
 
 class krnl_sobel;
 
@@ -25,18 +30,23 @@ int main(int argc, char* argv[]) {
   constexpr auto area = height * width;
 
   cv::VideoCapture cap;
+  // set the size of picture taken by the webcam
+  cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
+  cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+  /* Avoid internal buffering
+
+     but I get on my machine
+     VIDEOIO ERROR: V4L2: setting property #38 is not supported
+  */
+  cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
+
   // If opencv don't find a webcam the program exit here
   if (!cap.open(0)) {
     std::cerr << "Unable to connect to the webcam" << std::endl;
     return 1;
   }
-
-  // set the size of picture taken by the webcam
-  cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
-  cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-
-  selector_defines::CompiledForDeviceSelector selector;
-  queue q { selector, property::queue::enable_profiling {} };
+  //selector_defines::CompiledForDeviceSelector selector;
+  queue q;
 
   // This infinite loop takes a picture from the camera
   // applies the edge detection filter with the FPGA kernel
@@ -62,7 +72,7 @@ int main(int argc, char* argv[]) {
       auto pixel_rb = ib.get_access<access::mode::read>(cgh);
       auto pixel_wb = ob.get_access<access::mode::write>(cgh);
 
-      cgh.single_task<xilinx::reqd_work_group_size<1, 1, 1, krnl_sobel>>([=] {
+      cgh.single_task<krnl_sobel>([=] {
         xilinx::partition_array
           <char, 9,xilinx::partition::complete<0>> gX
           { {-1, 0, 1, -2, 0, 2, -1, 0, 1} };
